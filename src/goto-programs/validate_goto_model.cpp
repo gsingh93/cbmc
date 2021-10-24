@@ -48,7 +48,7 @@ private:
   /// - no return statements in any of the functions
   /// - lhs of every \ref code_function_callt instruction is nil
   /// - all return types are void (of both calls and functions themselves)
-  void check_returns_removed();
+  // void check_returns_removed();
 
   /// Check that for all:
   /// -# functions that are called or
@@ -84,8 +84,10 @@ validate_goto_modelt::validate_goto_modelt(
     function_pointer_calls_removed();
   }
 
+  /*
   if(validation_options.check_returns_removed)
     check_returns_removed();
+  */
 
   if(validation_options.check_called_functions)
     check_called_functions();
@@ -116,6 +118,7 @@ void validate_goto_modelt::function_pointer_calls_removed()
   }
 }
 
+#if 0
 void validate_goto_modelt::check_returns_removed()
 {
   for(const auto &fun : function_map)
@@ -139,6 +142,7 @@ void validate_goto_modelt::check_returns_removed()
     }
   }
 }
+#endif
 
 void validate_goto_modelt::check_called_functions()
 {
