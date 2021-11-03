@@ -7,6 +7,7 @@ Author: Diffblue Ltd.
 \*******************************************************************/
 
 #include "generate_function_bodies.h"
+#include "arith_tools.h"
 
 #include <ansi-c/c_nondet_symbol_factory.h>
 
@@ -66,6 +67,73 @@ void generate_function_bodiest::generate_parameter_names(
   }
   function.set_parameter_identifiers(to_code_type(function_symbol.type));
 }
+
+class return_int_generate_function_bodiest : public generate_function_bodiest
+{
+public:
+  return_int_generate_function_bodiest(std::vector<int> values)
+    : generate_function_bodiest(), values_(std::move(values))
+  {
+  }
+
+protected:
+  void generate_function_body_impl(
+    goto_functiont &function,
+    symbol_tablet &symbol_table,
+    const irep_idt &function_name) const override
+  {
+    auto const &function_symbol = symbol_table.lookup_ref(function_name);
+    // NOLINTNEXTLINE
+    auto add_instruction = [&](goto_programt::instructiont &&i)
+    {
+      auto instruction = function.body.add(std::move(i));
+      instruction->source_location_nonconst() = function_symbol.location;
+      return instruction;
+    };
+
+    const typet &return_type = to_code_type(function_symbol.type).return_type();
+    symbolt &aux_symbol = get_fresh_aux_symbol(
+      return_type,
+      id2string(function_name),
+      "return_value",
+      function_symbol.location,
+      ID_C,
+      symbol_table);
+
+    aux_symbol.is_static_lifetime = false;
+
+    add_instruction(goto_programt::make_decl(aux_symbol.symbol_expr()));
+
+    exprt rhs = side_effect_expr_nondett(return_type, function_symbol.location);
+    code_assignt assign(aux_symbol.symbol_expr(), rhs);
+    assign.add_source_location() = function_symbol.location;
+    add_instruction(goto_programt::make_assignment(std::move(assign)));
+
+    std::vector<exprt> value_exprs{};
+    for(int val : values_)
+    {
+      value_exprs.push_back(
+        equal_exprt(aux_symbol.symbol_expr(), from_integer(val, return_type)));
+    }
+
+    if(value_exprs.size() == 1)
+    {
+      add_instruction(goto_programt::make_assumption(value_exprs[0]));
+    }
+    else
+    {
+      add_instruction(goto_programt::make_assumption(or_exprt(value_exprs)));
+    }
+    add_instruction(
+      goto_programt::make_set_return_value(aux_symbol.symbol_expr()));
+    add_instruction(goto_programt::make_dead(aux_symbol.symbol_expr()));
+
+    add_instruction(goto_programt::make_end_function());
+  }
+
+private:
+  const std::vector<int> values_;
+};
 
 class assume_false_generate_function_bodiest : public generate_function_bodiest
 {
@@ -400,6 +468,29 @@ std::unique_ptr<generate_function_bodiest> generate_function_bodies_factory(
       std::regex{},
       object_factory_parameters,
       message_handler);
+  }
+
+  if(options.substr(0, strlen("return-int")) == "return-int")
+  {
+    std::vector<int> values{};
+    size_t starting_pos = options.find("-", strlen("return-int"));
+    if(starting_pos == std::string::npos)
+    {
+      throw invalid_command_line_argument_exceptiont{
+        "Missing integer", "--generate-function-body-options"};
+    }
+    starting_pos += 1;
+    while(starting_pos < options.size())
+    {
+      size_t next = options.find("-", starting_pos);
+      if(next == std::string::npos)
+      {
+        next = options.size();
+      }
+      values.push_back(stoi(options.substr(starting_pos, next - starting_pos)));
+      starting_pos = next + 1;
+    }
+    return util_make_unique<return_int_generate_function_bodiest>(values);
   }
 
   if(options == "assume-false")
